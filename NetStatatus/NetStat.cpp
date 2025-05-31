@@ -38,7 +38,7 @@ bool SendHeartbeatAndCheckResponse(SOCKET sock, const RemoteDevice& dev, DWORD t
     targetAddr.sin_port = htons(dev.port);
     inet_pton(AF_INET, dev.ip.c_str(), &targetAddr.sin_addr);
 
-    const char* pingMsg = "#ping";
+    const char* pingMsg = "$pi";
     sendto(sock, pingMsg, static_cast<int>(strlen(pingMsg)), 0, (SOCKADDR*)&targetAddr, sizeof(targetAddr));
 
     fd_set readSet;
@@ -58,7 +58,7 @@ bool SendHeartbeatAndCheckResponse(SOCKET sock, const RemoteDevice& dev, DWORD t
             buffer[bytes] = '\0';
             char ipStr[INET_ADDRSTRLEN];
             inet_ntop(AF_INET, &fromAddr.sin_addr, ipStr, sizeof(ipStr));
-            if (dev.ip == ipStr && std::string(buffer) == "#pong") {
+            if (dev.ip == ipStr && std::string(buffer) == "$pong") {
                 return true;
             }
         }
@@ -84,7 +84,7 @@ DWORD WINAPI PollingThread(LPVOID) {
             }
             InvalidateRect(hwndMain, NULL, TRUE);
         }
-        Sleep(2000);
+		Sleep(60000);  // Poll every 60 seconds
     }
 
     closesocket(sock);
