@@ -16,6 +16,8 @@ struct RemoteDevice {
     std::string ip;
     int port;
     bool isOnline;
+    bool pollingEnabled = true;
+    HWND checkboxHandle = nullptr; // Handle to the checkbox control
 };
 
 std::vector<RemoteDevice> remoteDevices = {
@@ -80,6 +82,9 @@ DWORD WINAPI PollingThread(LPVOID) {
     while (true) {
         if (pollingEnabled) {
             for (auto& dev : remoteDevices) {
+                if (!dev.pollingEnabled) {
+                    continue; // Skip polling for this device
+                }
                 dev.isOnline = SendHeartbeatAndCheckResponse(sock, dev);
             }
             InvalidateRect(hwndMain, NULL, TRUE);
@@ -93,36 +98,63 @@ DWORD WINAPI PollingThread(LPVOID) {
 
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
-    case WM_COMMAND:
-    {
-        if (LOWORD(wParam) == 1) {
-            pollingEnabled = !pollingEnabled;
-            InvalidateRect(hwnd, NULL, TRUE);
+    case WM_CREATE: {
+        CREATESTRUCT* pCreate = reinterpret_cast<CREATESTRUCT*>(lParam);
+        HINSTANCE hInstanceLocal = pCreate->hInstance;
+
+        int y = 10;
+        for (size_t i = 0; i < remoteDevices.size(); ++i) {
+            HWND hCheckbox = CreateWindowExA(
+                0, "BUTTON", "", WS_CHILD | WS_VISIBLE | BS_CHECKBOX,
+                10, y, 20, 20, hwnd, (HMENU)(1000 + i), hInstanceLocal, NULL
+            );
+            remoteDevices[i].checkboxHandle = hCheckbox;
+            y += 30;
         }
         break;
     }
-    case WM_PAINT:
-	{
+
+    case WM_COMMAND: {
+        int id = LOWORD(wParam);
+        if (id >= 1000 && id < 1000 + remoteDevices.size()) {
+            size_t index = id - 1000;
+            LRESULT state = SendMessage(remoteDevices[index].checkboxHandle, BM_GETCHECK, 0, 0);
+            remoteDevices[index].pollingEnabled = (state == BST_CHECKED);
+            InvalidateRect(hwnd, NULL, TRUE); // Trigger a repaint
+        }
+        break;
+    }
+    case WM_PAINT: {
         PAINTSTRUCT ps;
-        HDC hdc;
-        hdc = BeginPaint(hwnd, &ps);
+        HDC hdc = BeginPaint(hwnd, &ps);
         SetBkMode(hdc, TRANSPARENT);
 
         int y = 10;
         for (const auto& dev : remoteDevices) {
             std::string label = dev.name + "  " + dev.ip + ":" + std::to_string(dev.port);
-            TextOutA(hdc, 30, y, label.c_str(), static_cast<int>(label.size()));
-            HBRUSH brush = CreateSolidBrush(dev.isOnline ? RGB(0, 200, 0) : RGB(200, 0, 0));
+            TextOutA(hdc, 40, y + 2, label.c_str(), static_cast<int>(label.size()));
+
+            COLORREF color;
+            if (!dev.pollingEnabled) {
+                color = RGB(255, 255, 0); // Yellow
+            }
+            else {
+                color = dev.isOnline ? RGB(0, 200, 0) : RGB(200, 0, 0); // Green or Red
+            }
+
+            HBRUSH brush = CreateSolidBrush(color);
             HBRUSH oldBrush = (HBRUSH)SelectObject(hdc, brush);
             Ellipse(hdc, 10, y + 2, 25, y + 17);
             SelectObject(hdc, oldBrush);
             DeleteObject(brush);
+
             y += 30;
         }
 
         EndPaint(hwnd, &ps);
         break;
-	}
+    }
+
     case WM_DESTROY:
     {
         PostQuitMessage(0);
